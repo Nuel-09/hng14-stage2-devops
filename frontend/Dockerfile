@@ -8,6 +8,9 @@ RUN npm ci --omit=dev
 
 # Second stage: build the application
 FROM node:20-alpine AS runtime
+
+RUN apk upgrade --no-cache
+
 WORKDIR /app
 
 ENV NODE_ENV=production

@@ -16,7 +16,13 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.12-slim AS runtime
-# this is used to set the working directory
+
+# Apply security updates so Trivy/OS scans pass on patched Debian packages
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
