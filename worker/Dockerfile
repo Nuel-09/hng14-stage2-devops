@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -10,7 +10,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \

@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
 
 # this is used to prevent the python from writing the bytecode to the disk
@@ -15,7 +15,7 @@ COPY requirements.txt ./
 # this is used to install the dependencies in the virtual environment
 RUN pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 
 # Apply security updates so Trivy/OS scans pass on patched Debian packages
 RUN apt-get update \

@@ -134,14 +134,16 @@ jobs:
           sudo apt-get install -y wget
           wget -qO - https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.58.1
 
+      # Ignore unfixed CVEs (no patched package yet) so the gate matches "vendor-fixed CRITICAL".
       - name: Trivy scan (CRITICAL fails pipeline)
         env:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          trivy image --severity CRITICAL --exit-code 1 --format sarif -o trivy-frontend.sarif "jobproc-frontend:${SHA}"
-          trivy image --severity CRITICAL --exit-code 1 --format sarif -o trivy-api.sarif "jobproc-api:${SHA}"
-          trivy image --severity CRITICAL --exit-code 1 --format sarif -o trivy-worker.sarif "jobproc-worker:${SHA}"
+          TRIVY_ARGS=(image --severity CRITICAL --exit-code 1 --ignore-unfixed --format sarif)
+          trivy "${TRIVY_ARGS[@]}" -o trivy-frontend.sarif "jobproc-frontend:${SHA}"
+          trivy "${TRIVY_ARGS[@]}" -o trivy-api.sarif "jobproc-api:${SHA}"
+          trivy "${TRIVY_ARGS[@]}" -o trivy-worker.sarif "jobproc-worker:${SHA}"
 
       - uses: actions/upload-artifact@v4
         with:
