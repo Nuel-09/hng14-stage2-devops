@@ -1,0 +1,211 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: flake8 (API + tests)
+        run: |
+          pip install flake8
+          flake8 api/main.py api/tests/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: eslint (frontend)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+
+      - name: hadolint (Dockerfiles)
+        run: |
+          set -euo pipefail
+          sudo wget -qO /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          sudo chmod +x /usr/local/bin/hadolint
+          hadolint -c .hadolint.yaml frontend/Dockerfile api/Dockerfile worker/Dockerfile
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: pytest + coverage
+        working-directory: api
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          python -m pytest tests/ --cov=main --cov-report=xml --cov-report=term-missing
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: api/coverage.xml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build, tag (SHA + latest), push to local registry
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          push_img() {
+            local dir="$1"
+            local name="$2"
+            docker build -t "${name}:${SHA}" -t "${name}:latest" "./${dir}"
+            docker tag "${name}:${SHA}" "localhost:5000/${name}:${SHA}"
+            docker tag "${name}:${SHA}" "localhost:5000/${name}:latest"
+            docker push "localhost:5000/${name}:${SHA}"
+            docker push "localhost:5000/${name}:latest"
+          }
+          push_img frontend jobproc-frontend
+          push_img api jobproc-api
+          push_img worker jobproc-worker
+
+      - name: Export images for later jobs
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p image-artifacts
+          docker save "jobproc-frontend:${SHA}" | gzip > image-artifacts/jobproc-frontend.tar.gz
+          docker save "jobproc-api:${SHA}" | gzip > image-artifacts/jobproc-api.tar.gz
+          docker save "jobproc-worker:${SHA}" | gzip > image-artifacts/jobproc-worker.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: image-artifacts/*.tar.gz
+
+  security:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: image-artifacts
+
+      - name: Load images
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gunzip -c image-artifacts/jobproc-frontend.tar.gz | docker load
+          gunzip -c image-artifacts/jobproc-api.tar.gz | docker load
+          gunzip -c image-artifacts/jobproc-worker.tar.gz | docker load
+
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget
+          wget -qO - https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.58.1
+
+      - name: Trivy scan (CRITICAL fails pipeline)
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          trivy image --severity CRITICAL --exit-code 1 --format sarif -o trivy-frontend.sarif "jobproc-frontend:${SHA}"
+          trivy image --severity CRITICAL --exit-code 1 --format sarif -o trivy-api.sarif "jobproc-api:${SHA}"
+          trivy image --severity CRITICAL --exit-code 1 --format sarif -o trivy-worker.sarif "jobproc-worker:${SHA}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif
+          path: |
+            trivy-frontend.sarif
+            trivy-api.sarif
+            trivy-worker.sarif
+
+  integration:
+    needs: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: image-artifacts
+
+      - name: Load images
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gunzip -c image-artifacts/jobproc-frontend.tar.gz | docker load
+          gunzip -c image-artifacts/jobproc-api.tar.gz | docker load
+          gunzip -c image-artifacts/jobproc-worker.tar.gz | docker load
+
+      - name: Configure environment
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ github.sha }}/" .env
+
+      - name: Integration test (full stack)
+        run: bash scripts/integration_test.sh
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: image-artifacts
+
+      - name: Load images
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gunzip -c image-artifacts/jobproc-frontend.tar.gz | docker load
+          gunzip -c image-artifacts/jobproc-api.tar.gz | docker load
+          gunzip -c image-artifacts/jobproc-worker.tar.gz | docker load
+
+      - name: Configure environment
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ github.sha }}/" .env
+
+      - name: Rolling deploy (API gate)
+        run: bash scripts/deploy_rolling.sh

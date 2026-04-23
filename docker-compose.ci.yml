@@ -1,0 +1,61 @@
+# Pre-built images only (CI/CD). Set IMAGE_TAG via env (e.g. git SHA).
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - app_net
+    mem_limit: ${REDIS_MEM_LIMIT}
+    cpus: ${REDIS_CPUS}
+
+  api:
+    image: jobproc-api:${IMAGE_TAG}
+    environment:
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+    expose:
+      - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app_net
+    mem_limit: ${API_MEM_LIMIT}
+    cpus: ${API_CPUS}
+
+  worker:
+    image: jobproc-worker:${IMAGE_TAG}
+    environment:
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app_net
+    mem_limit: ${WORKER_MEM_LIMIT}
+    cpus: ${WORKER_CPUS}
+
+  frontend:
+    image: jobproc-frontend:${IMAGE_TAG}
+    environment:
+      API_URL: ${API_URL}
+    ports:
+      - "${FRONTEND_PORT}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app_net
+    mem_limit: ${FRONTEND_MEM_LIMIT}
+    cpus: ${FRONTEND_CPUS}
+
+networks:
+  app_net:
+    name: app_net
