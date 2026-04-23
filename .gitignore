@@ -1,0 +1,23 @@
+# Secrets and local overrides — never commit real credentials
+.env
+.env.*
+# Keep committed templates (pattern above matches `.env.example` too)
+!.env.example
+!**/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+
+# OS / IDE
+.DS_Store
+Thumbs.db

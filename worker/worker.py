@@ -1,9 +1,11 @@
 import redis
 import time
 import os
-import signal
 
-r = redis.Redis(host="localhost", port=6379)
+r = redis.Redis(
+    host=os.getenv("REDIS_HOST", "redis"),
+    port=int(os.getenv("REDIS_PORT", "6379")),
+)
 
 def process_job(job_id):
     print(f"Processing job {job_id}")
