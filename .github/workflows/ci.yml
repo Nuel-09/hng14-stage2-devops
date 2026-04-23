@@ -128,9 +128,10 @@ jobs:
           gunzip -c image-artifacts/jobproc-worker.tar.gz | docker load
 
       # Install from release tarball — avoids piping install.sh to sh (fragile under strict bash / HTTP errors).
+      # TRIVY_VERSION must match a real tag on https://github.com/aquasecurity/trivy/releases (v0.58.1 does not exist → 404).
       - name: Install Trivy
         env:
-          TRIVY_VERSION: "0.58.1"
+          TRIVY_VERSION: "0.70.0"
         run: |
           set -euo pipefail
           ARCH="$(uname -m)"
