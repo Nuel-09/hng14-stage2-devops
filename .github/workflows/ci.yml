@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -82,7 +82,7 @@ jobs:
           push_img() {
             local dir="$1"
             local name="$2"
-            docker build -t "${name}:${SHA}" -t "${name}:latest" "./${dir}"
+            docker build --pull -t "${name}:${SHA}" -t "${name}:latest" "./${dir}"
             docker tag "${name}:${SHA}" "localhost:5000/${name}:${SHA}"
             docker tag "${name}:${SHA}" "localhost:5000/${name}:latest"
             docker push "localhost:5000/${name}:${SHA}"
@@ -134,16 +134,21 @@ jobs:
           sudo apt-get install -y wget
           wget -qO - https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.58.1
 
-      # Ignore unfixed CVEs (no patched package yet) so the gate matches "vendor-fixed CRITICAL".
+      # Ignore unfixed CVEs (no patched package yet). Fail only on fixable CRITICAL.
       - name: Trivy scan (CRITICAL fails pipeline)
         env:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          TRIVY_ARGS=(image --severity CRITICAL --exit-code 1 --ignore-unfixed --format sarif)
-          trivy "${TRIVY_ARGS[@]}" -o trivy-frontend.sarif "jobproc-frontend:${SHA}"
-          trivy "${TRIVY_ARGS[@]}" -o trivy-api.sarif "jobproc-api:${SHA}"
-          trivy "${TRIVY_ARGS[@]}" -o trivy-worker.sarif "jobproc-worker:${SHA}"
+          scan() {
+            local out="$1"
+            local img="$2"
+            trivy image --severity CRITICAL --exit-code 1 --ignore-unfixed \
+              --format sarif -o "${out}" "${img}"
+          }
+          scan trivy-frontend.sarif "jobproc-frontend:${SHA}"
+          scan trivy-api.sarif "jobproc-api:${SHA}"
+          scan trivy-worker.sarif "jobproc-worker:${SHA}"
 
       - uses: actions/upload-artifact@v4
         with:

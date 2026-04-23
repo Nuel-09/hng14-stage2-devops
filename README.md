@@ -8,7 +8,7 @@ Job processing stack: **frontend** (Node/Express), **API** (FastAPI), **worker**
 
 - **Docker** and **Docker Compose v2** (Docker Desktop on Windows includes both).
 - **Git**.
-- For local development without Docker: **Python 3.12+**, **Node.js 20+**, **npm**.
+- For local development without Docker: **Python 3.12+**, **Node.js 22** (matches the frontend Docker image and CI lint job), **npm**.
 
 ---
 
@@ -118,6 +118,8 @@ cd ../frontend && npm run lint
 ## CI/CD (GitHub Actions)
 
 Workflow file: `.github/workflows/ci.yml`.
+
+The **lint** job runs ESLint on **Node 22**, matching `frontend/Dockerfile`. The **build** job uses **`docker build --pull`** so each run uses current base images from the registry before **Trivy** scans them.
 
 When you **push** to this repository on GitHub, Actions runs automatically:
 
